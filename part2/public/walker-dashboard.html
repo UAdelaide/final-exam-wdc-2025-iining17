@@ -9,7 +9,14 @@
 </head>
 <body class="bg-light">
   <div id="app" class="container py-4">
-    <h1 class="mb-4 text-success">Walker Dashboard</h1>
+    <!-- Header with logout button -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h1 class="text-success mb-0">Walker Dashboard</h1>
+      <button @click="logout" class="btn btn-outline-danger" :disabled="isLoggingOut">
+        <span v-if="isLoggingOut" class="spinner-border spinner-border-sm me-2" role="status"></span>
+        {{ isLoggingOut ? 'Logging out...' : 'Logout' }}
+      </button>
+    </div>
 
     <!-- Alert messages -->
     <div v-if="message" class="alert alert-info">{{ message }}</div>
@@ -43,7 +50,25 @@
         const walks = ref([]);
         const message = ref('');
         const error = ref('');
-        const user = 3;
+        const isLoggingOut = ref(false);
+        const currentUser = ref(null);
+
+        // Get current user information
+        async function getCurrentUser() {
+          try {
+            const res = await fetch('/api/users/me');
+            if (!res.ok) {
+              throw new Error('Failed to get current user');
+            }
+            const userData = await res.json();
+            currentUser.value = userData;
+            return userData;
+          } catch (err) {
+            error.value = 'Failed to get user information: ' + err.message;
+            console.error('Error getting current user:', err);
+            return null;
+          }
+        }
 
         async function loadWalkRequests() {
           try {
@@ -57,10 +82,19 @@
 
         async function applyToWalk(requestId) {
           try {
+            // Get current user if not already loaded
+            let user = currentUser.value;
+            if (!user) {
+              user = await getCurrentUser();
+              if (!user) {
+                throw new Error('Unable to get current user information');
+              }
+            }
+
             const res = await fetch(`/api/walks/${requestId}/apply`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ walker_id: user })
+              body: JSON.stringify({ walker_id: user.user_id })
             });
             const result = await res.json();
 
@@ -74,7 +108,34 @@
           }
         }
 
+        // Logout function
+        async function logout() {
+          isLoggingOut.value = true;
+          try {
+            const response = await fetch('/api/users/logout', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              }
+            });
+
+            if (response.ok) {
+              // Clear any local data and redirect to login page
+              message.value = '';
+              error.value = '';
+              window.location.href = '/index.html';
+            } else {
+              throw new Error('Logout failed');
+            }
+          } catch (err) {
+            error.value = 'Logout failed. Please try again.';
+          } finally {
+            isLoggingOut.value = false;
+          }
+        }
+
         onMounted(() => {
+          getCurrentUser();  // Load current user information
           loadWalkRequests();
         });
 
@@ -82,7 +143,11 @@
           walks,
           message,
           error,
-          applyToWalk
+          isLoggingOut,
+          currentUser,
+          applyToWalk,
+          logout,
+          getCurrentUser
         };
       }
     }).mount('#app');

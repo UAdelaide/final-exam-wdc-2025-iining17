@@ -11,10 +11,139 @@
 
   <div id="app" class="container py-5">
     <h1 class="mb-4 text-primary">{{ message }}</h1>
-    <p class="lead">Connect with trusted walkers for your beloved dog!</p>
+    <p class="lead">Connect with trusted student walkers for your beloved dog!</p>
 
-    <a href="owner-dashboard.html" class="btn btn-outline-primary me-2">Owner Dashboard</a>
-    <a href="walker-dashboard.html" class="btn btn-outline-success">Walker Dashboard</a>
+    <!-- Login Form -->
+    <div class="row justify-content-center mt-4">
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-body">
+            <h5 class="card-title">Login</h5>
+            
+            <!-- Error message display -->
+            <div v-if="errorMessage" class="alert alert-danger" role="alert">
+              {{ errorMessage }}
+            </div>
+            
+            <!-- Success message display -->
+            <div v-if="successMessage" class="alert alert-success" role="alert">
+              {{ successMessage }}
+            </div>
+
+            <form @submit.prevent="login">
+              <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <input 
+                  type="text" 
+                  class="form-control" 
+                  id="username" 
+                  v-model="loginForm.username"
+                  required
+                  placeholder="Enter your username">
+              </div>
+              
+              <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input 
+                  type="password" 
+                  class="form-control" 
+                  id="password" 
+                  v-model="loginForm.password"
+                  required
+                  placeholder="Enter your password">
+              </div>
+              
+              <button type="submit" class="btn btn-primary w-100" :disabled="isLoading">
+                <span v-if="isLoading" class="spinner-border spinner-border-sm me-2" role="status"></span>
+                {{ isLoading ? 'Logging in...' : 'Log In' }}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Original dashboard links (only show when not logged in) -->
+    <div v-if="!isLoggedIn" class="text-center mt-4">
+      <p class="text-muted">Or access directly:</p>
+      <a href="owner-dashboard.html" class="btn btn-outline-primary me-2">Owner Dashboard</a>
+      <a href="walker-dashboard.html" class="btn btn-outline-success">Walker Dashboard</a>
+    </div>
+
+    <!-- Dogs Table Section -->
+    <div class="mt-5">
+      <h2 class="mb-4 text-center">Meet Our Dogs</h2>
+      
+      <!-- Loading state -->
+      <div v-if="dogsLoading" class="text-center">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading dogs...</span>
+        </div>
+        <p class="mt-2">Loading our furry friends...</p>
+      </div>
+
+      <!-- Error state -->
+      <div v-if="dogsError" class="alert alert-warning" role="alert">
+        {{ dogsError }}
+      </div>
+
+      <!-- Dogs table -->
+      <div v-if="!dogsLoading && !dogsError && dogs.length > 0" class="table-responsive">
+        <table class="table table-striped table-hover">
+          <thead class="table-primary">
+            <tr>
+              <th scope="col">Photo</th>
+              <th scope="col">Dog Name</th>
+              <th scope="col">Size</th>
+              <th scope="col">Owner</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(dog, index) in dogs" :key="index">
+              <td>
+                <div class="position-relative" style="width: 80px; height: 80px;">
+                  <!-- Loading spinner for individual dog photos -->
+                  <div v-if="dogPhotos[index]?.loading" class="d-flex justify-content-center align-items-center h-100">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status">
+                      <span class="visually-hidden">Loading...</span>
+                    </div>
+                  </div>
+                  <!-- Dog photo or fallback -->
+                  <div v-else class="h-100">
+                    <img 
+                      v-if="dogPhotos[index]?.url"
+                      :src="dogPhotos[index].url" 
+                      :alt="`Photo of ${dog.dog_name}`"
+                      src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E"
+                      alt="Dog photo"
+                      class="rounded-circle object-fit-cover w-100 h-100"
+                      @error="handleImageError(index)">
+                    <!-- Fallback if image fails to load -->
+                    <div v-else class="bg-secondary rounded-circle d-flex justify-content-center align-items-center h-100">
+                      <span class="text-white fs-4">🐕</span>
+                    </div>
+                  </div>
+                </div>
+              </td>
+              <td class="align-middle">
+                <strong>{{ dog.dog_name }}</strong>
+              </td>
+              <td class="align-middle">
+                <span class="badge" :class="getSizeBadgeClass(dog.size)">
+                  {{ dog.size }}
+                </span>
+              </td>
+              <td class="align-middle">{{ dog.owner_username }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- No dogs message -->
+      <div v-if="!dogsLoading && !dogsError && dogs.length === 0" class="text-center">
+        <p class="text-muted">No dogs available at the moment.</p>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -22,8 +151,141 @@
     createApp({
       data() {
         return {
-          message: 'Welcome to the Dog Walking Service!'
+          message: 'Welcome to the Dog Walking Service!',
+          loginForm: {
+            username: '',
+            password: ''
+          },
+          errorMessage: '',
+          successMessage: '',
+          isLoading: false,
+          isLoggedIn: false,
+          // Dogs data
+          dogs: [],
+          dogPhotos: [],
+          dogsLoading: false,
+          dogsError: ''
         };
+      },
+      methods: {
+        async login() {
+          this.isLoading = true;
+          this.errorMessage = '';
+          this.successMessage = '';
+
+          try {
+            const response = await fetch('/api/users/login', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(this.loginForm)
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+              this.successMessage = 'Login successful! Redirecting...';
+              this.isLoggedIn = true;
+              
+              // Short delay before redirect
+              setTimeout(() => {
+                window.location.href = data.redirectUrl;
+              }, 1500);
+            } else {
+              this.errorMessage = data.error || 'Login failed';
+            }
+          } catch (error) {
+            console.error('Login error:', error);
+            this.errorMessage = 'Network error. Please try again.';
+          } finally {
+            this.isLoading = false;
+          }
+        },
+
+        async checkLoginStatus() {
+          try {
+            const response = await fetch('/api/users/me');
+            if (response.ok) {
+              const user = await response.json();
+              this.isLoggedIn = true;
+              // If user is already logged in, can choose to redirect directly
+              // const redirectUrl = user.role === 'owner' ? '/owner-dashboard.html' : '/walker-dashboard.html';
+              // window.location.href = redirectUrl;
+            }
+          } catch (error) {
+            // User not logged in, normal situation
+          }
+        },
+
+        async loadDogs() {
+          this.dogsLoading = true;
+          this.dogsError = '';
+
+          try {
+            // Fetch dogs from Part 1 API endpoint
+            const response = await fetch('/api/dogs');
+            
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            this.dogs = await response.json();
+            
+            // Initialize photo array with loading states
+            this.dogPhotos = this.dogs.map(() => ({ loading: true, url: null }));
+            
+            // Load random photos for each dog
+            await this.loadDogPhotos();
+
+          } catch (error) {
+            console.error('Error loading dogs:', error);
+            this.dogsError = 'Failed to load dogs. Please try again later.';
+          } finally {
+            this.dogsLoading = false;
+          }
+        },
+
+        async loadDogPhotos() {
+          // Load photos for each dog using dogs.ceo API
+          const photoPromises = this.dogs.map(async (dog, index) => {
+            try {
+              const response = await fetch('https://dog.ceo/api/breeds/image/random');
+              const data = await response.json();
+              
+              if (data.status === 'success') {
+                this.dogPhotos[index] = { loading: false, url: data.message };
+              } else {
+                this.dogPhotos[index] = { loading: false, url: null };
+              }
+            } catch (error) {
+              console.error(`Error loading photo for ${dog.dog_name}:`, error);
+              this.dogPhotos[index] = { loading: false, url: null };
+            }
+          });
+
+          await Promise.all(photoPromises);
+        },
+
+        handleImageError(index) {
+          // Handle image load errors by setting url to null (will show fallback)
+          this.dogPhotos[index] = { loading: false, url: null };
+        },
+
+        getSizeBadgeClass(size) {
+          // Return Bootstrap badge classes based on dog size
+          const sizeClasses = {
+            'small': 'bg-info',
+            'medium': 'bg-warning text-dark',
+            'large': 'bg-success'
+          };
+          return sizeClasses[size] || 'bg-secondary';
+        }
+      },
+      
+      mounted() {
+        this.checkLoginStatus();
+        this.loadDogs(); // Load dogs when component mounts
       }
     }).mount('#app');
   </script>

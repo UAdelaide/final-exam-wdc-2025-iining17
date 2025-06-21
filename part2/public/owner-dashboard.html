@@ -9,7 +9,14 @@
 </head>
 <body class="bg-light">
   <div id="app" class="container py-4">
-    <h1 class="mb-4 text-primary">Owner Dashboard</h1>
+    <!-- Header with logout button -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h1 class="text-primary mb-0">Owner Dashboard</h1>
+      <button @click="logout" class="btn btn-outline-danger" :disabled="isLoggingOut">
+        <span v-if="isLoggingOut" class="spinner-border spinner-border-sm me-2" role="status"></span>
+        {{ isLoggingOut ? 'Logging out...' : 'Logout' }}
+      </button>
+    </div>
 
     <!-- Walk request form -->
     <div class="card mb-4">
@@ -19,8 +26,16 @@
       <div class="card-body">
         <form @submit.prevent="submitWalkRequest">
           <div class="mb-3">
-            <label class="form-label">Dog ID</label>
-            <input v-model="form.dog_id" type="number" class="form-control" required>
+            <label class="form-label">Select Your Dog</label>
+            <select v-model="form.dog_id" class="form-select" required>
+              <option value="">-- Choose a dog --</option>
+              <option v-for="dog in userDogs" :key="dog.dog_id" :value="dog.dog_id">
+                {{ dog.name }} ({{ dog.size }})
+              </option>
+            </select>
+            <div v-if="userDogs.length === 0" class="form-text text-muted">
+              No dogs found. Please add a dog to your account first.
+            </div>
           </div>
           <div class="mb-3">
             <label class="form-label">Requested Date & Time</label>
@@ -34,7 +49,9 @@
             <label class="form-label">Location</label>
             <input v-model="form.location" type="text" class="form-control" required>
           </div>
-          <button type="submit" class="btn btn-success">Create Walk</button>
+          <button type="submit" class="btn btn-success" :disabled="userDogs.length === 0">
+            Create Walk
+          </button>
         </form>
       </div>
     </div>
@@ -77,8 +94,23 @@
         });
 
         const walks = ref([]);
+        const userDogs = ref([]);
         const message = ref('');
         const error = ref('');
+        const isLoggingOut = ref(false);
+
+        async function loadUserDogs() {
+          try {
+            const res = await fetch('/api/users/dogs');
+            if (!res.ok) {
+              throw new Error('Failed to load dogs');
+            }
+            userDogs.value = await res.json();
+          } catch (err) {
+            error.value = 'Failed to load your dogs: ' + err.message;
+            console.error('Error loading dogs:', err);
+          }
+        }
 
         async function loadWalks() {
           try {
@@ -115,16 +147,46 @@
           }
         }
 
+        // Logout function
+        async function logout() {
+          isLoggingOut.value = true;
+          try {
+            const response = await fetch('/api/users/logout', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              }
+            });
+
+            if (response.ok) {
+              // Clear any local data and redirect to login page
+              message.value = '';
+              error.value = '';
+              window.location.href = '/index.html';
+            } else {
+              throw new Error('Logout failed');
+            }
+          } catch (err) {
+            error.value = 'Logout failed. Please try again.';
+          } finally {
+            isLoggingOut.value = false;
+          }
+        }
+
         onMounted(() => {
+          loadUserDogs();  // Load user's dogs first
           loadWalks();
         });
 
         return {
           form,
           walks,
+          userDogs,
           message,
           error,
-          submitWalkRequest
+          isLoggingOut,
+          submitWalkRequest,
+          logout
         };
       }
     }).mount('#app');
